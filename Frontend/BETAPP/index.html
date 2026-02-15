@@ -1,12 +1,14 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Playbook — Fantasy Sportsbook</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wagerbook — Sportsbook</title>
   <link rel="stylesheet" href="style.css" />
   <script src="script.js" defer></script>
 </head>
+
 <body>
   <!-- Top Nav -->
   <header class="topbar">
@@ -14,7 +16,8 @@
       <div class="logo">PB</div>
       <div class="brandText">
         <div class="brandName">Playbook</div>
-        <div class="brandSub">Fantasy Sportsbook</div>
+        <div class="brandSub">Sportsbook</div>
+        <div class="brand" id="brandHome"></div>
       </div>
     </div>
 
@@ -183,7 +186,7 @@
       <div class="slipFooter">
         <div class="slipRow">
           <div class="muted">Stake</div>
-          <input id="stakeInput" class="input stake" type="number" min="1" step="1" placeholder="e.g. 500" />
+          <input id="stakeInput" type="number" min="0.01" step="0.01" placeholder="e.g. 25.50" />
         </div>
 
         <div class="slipRow">
@@ -210,4 +213,5 @@
     </div>
   </footer>
 </body>
+
 </html>
