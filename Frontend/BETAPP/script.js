@@ -1,5 +1,5 @@
 /* ===========================
-   Playbook Prototype (Frontend)
+   Playbook Prototype (Frontend):
    - localStorage "DB"
    - Moneyline only
    - Single-leg betslip
