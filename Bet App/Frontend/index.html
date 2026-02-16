@@ -199,10 +199,19 @@
           <div class="money" id="potentialPayout">$0</div>
         </div>
 
-        <button class="primaryBtn full" id="btnPlaceBet" disabled>Place Bet</button>
-        <div class="muted small">
-          Prototype: single-leg moneyline only.
+        <div class="placeRow">
+          <button class="primaryBtn full" id="btnPlaceBet" disabled>Place Bet</button>
+          <div class="legsBadge" id="legsBadge" hidden>0</div>
         </div>
+
+        <div class="muted small" id="slipOddsLine" hidden>
+          Odds: —
+        </div>
+
+        <div class="muted small">
+          Prototype: parlays supported (play-money).
+        </div>
+        
       </div>
     </aside>
   </main>

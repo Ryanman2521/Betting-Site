@@ -135,6 +135,8 @@ const el = {
     leaderTbody: document.getElementById("leaderTbody"),
 
     brandHome: document.getElementById("brandHome"),
+    legsBadge: document.getElementById("legsBadge"),
+    slipOddsLine: document.getElementById("slipOddsLine"),
 };
 
 /* ========== App State ========== */
@@ -636,6 +638,9 @@ function renderSlip() {
     // Enable place bet if logged in and stake valid
     el.btnPlaceBet.disabled = !user;
     renderSlipTotals();
+
+    // NEW: keep badge updated even before stake is entered
+    renderSlipMeta();
 }
 
 function renderSlipTotals() {
@@ -645,6 +650,10 @@ function renderSlipTotals() {
         el.potentialProfit.textContent = fmtMoney(0);
         el.potentialPayout.textContent = fmtMoney(0);
         el.btnPlaceBet.disabled = true;
+
+        el.legsBadge.hidden = true;
+        el.slipOddsLine.hidden = true;
+
         return;
     }
 
@@ -668,6 +677,35 @@ function renderSlipTotals() {
 
     // disable if insufficient funds
     el.btnPlaceBet.disabled = stake > user.bankroll;
+
+    el.legsBadge.hidden = false;
+    el.legsBadge.textContent = String(slip.length);
+
+    const combined = calcCombinedAmericanOdds(slip);
+    el.slipOddsLine.hidden = false;
+    el.slipOddsLine.textContent =
+        slip.length === 1
+            ? `Odds: ${fmtOdds(combined)} • 1 leg`
+            : `Parlay Odds: ${fmtOdds(combined)} • ${slip.length} legs`;
+}
+
+function renderSlipMeta() {
+    // badge count
+    if (slip.length === 0) {
+        el.legsBadge.hidden = true;
+        el.slipOddsLine.hidden = true;
+        return;
+    }
+
+    el.legsBadge.hidden = false;
+    el.legsBadge.textContent = String(slip.length);
+
+    const combined = calcCombinedAmericanOdds(slip);
+    el.slipOddsLine.hidden = false;
+    el.slipOddsLine.textContent =
+        slip.length === 1
+            ? `Odds: ${fmtOdds(combined)} • 1 leg`
+            : `Parlay Odds: ${fmtOdds(combined)} • ${slip.length} legs`;
 }
 
 /* ========== Place Bet ========== */
@@ -975,6 +1013,22 @@ function calcParlayReturn(stake, legs) {
     const payout = s * dec;
     const profit = payout - s;
     return { profit: round2(profit), payout: round2(payout), decimal: dec };
+}
+
+function decimalToAmerican(decimal) {
+    const d = Number(decimal);
+    if (!Number.isFinite(d) || d <= 1) return 0;
+
+    if (d >= 2) return Math.round((d - 1) * 100);
+    return -Math.round(100 / (d - 1));
+}
+
+function calcCombinedAmericanOdds(legs) {
+    if (!legs || legs.length === 0) return 0;
+    if (legs.length === 1) return Number(legs[0].odds) || 0;
+
+    const { decimal } = calcParlayReturn(1, legs); // stake=1 to get decimal only
+    return decimalToAmerican(decimal);
 }
 
 function calcMoneylineReturn(stake, odds) {
