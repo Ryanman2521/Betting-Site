@@ -247,7 +247,7 @@ function bindEvents() {
     el.btnBackToBoard2.addEventListener("click", () => showPanel("board"));
 
     el.btnClearSlip.addEventListener("click", () => {
-        slip = null;
+        slip = [];
         el.stakeInput.value = "";
         renderSlip();
         renderBoard(); // remove odds active highlight
@@ -320,7 +320,7 @@ function onLogin() {
 
 function logout() {
     setCurrentUsername(null);
-    slip = null;
+    slip = [];
     el.stakeInput.value = "";
     toast("Logged out.", "ok");
     renderAuthBar();
@@ -500,7 +500,7 @@ function oddsButton({ game, side, team, odds }) {
     btn.className = "oddsBtn";
     btn.type = "button";
 
-    const isActive = slip && slip.gameId === game.id && slip.pickSide === side;
+    const isActive = slip.some(l => l.gameId === game.id && l.pickSide === side);
     if (isActive) btn.classList.add("active");
 
     btn.innerHTML = `
@@ -685,10 +685,15 @@ function onPlaceBet() {
         return toast(`Daily max is ${fmtMoney(DAILY_WAGER_MAX)}. Remaining today: ${fmtMoney(remaining)}.`, "warn");
     }
 
-    const game = GAMES.find(g => g.id === slip.gameId);
-    if (!game) return toast("Game not found.", "warn");
-    if (game.status === "final") return toast("Game already final.", "warn");
-    if (Date.now() >= new Date(game.startISO).getTime()) return toast("Betting closed (game started).", "warn");
+    // Validate all legs
+    for (const leg of slip) {
+        const game = GAMES.find(g => g.id === leg.gameId);
+        if (!game) return toast("Game not found.", "warn");
+        if (game.status === "final") return toast("One of your games is already final.", "warn");
+        if (Date.now() >= new Date(game.startISO).getTime()) {
+            return toast("Betting closed (a game started).", "warn");
+        }
+    }
 
     // Deduct stake immediately
     user.bankroll -= stake;
@@ -725,7 +730,12 @@ function onPlaceBet() {
     bets.unshift(bet);
     saveBets(bets);
 
-    toast(`Bet placed: ${bet.pickTeam} ${fmtOdds(bet.oddsUsed)} for ${fmtMoney(bet.stake)}.`, "ok");
+    toast(
+        bet.type === "parlay"
+            ? `Parlay placed: ${bet.legs.length} legs for ${fmtMoney(bet.stake)}.`
+            : `Bet placed: ${bet.legs[0].pickTeam} ${fmtOdds(bet.legs[0].odds)} for ${fmtMoney(bet.stake)}.`,
+        "ok"
+    );
 
     // Clear slip
     slip = [];
@@ -884,7 +894,7 @@ function onResetPrototype() {
     localStorage.removeItem(LS_KEYS.BETS);
     localStorage.removeItem(LS_KEYS.CURRENT);
 
-    slip = null;
+    slip = [];
     el.stakeInput.value = "";
     ensureStorageInitialized();
     toast("Prototype reset.", "ok");
@@ -951,22 +961,23 @@ function hoursFromNowISO(hours) {
     return d.toISOString();
 }
 
-function calcMoneylineReturn(stake, odds) {
-    function americanToDecimal(odds) {
-        const o = Number(odds);
-        if (o > 0) return 1 + (o / 100);
-        if (o < 0) return 1 + (100 / Math.abs(o));
-        return 1;
-    }
+function americanToDecimal(odds) {
+    const o = Number(odds);
+    if (o > 0) return 1 + (o / 100);
+    if (o < 0) return 1 + (100 / Math.abs(o));
+    return 1;
+}
 
-    function calcParlayReturn(stake, legs) {
-        const s = Number(stake) || 0;
-        let dec = 1;
-        for (const leg of legs) dec *= americanToDecimal(leg.odds);
-        const payout = s * dec;
-        const profit = payout - s;
-        return { profit: round2(profit), payout: round2(payout), decimal: dec };
-    }
+function calcParlayReturn(stake, legs) {
+    const s = Number(stake) || 0;
+    let dec = 1;
+    for (const leg of legs) dec *= americanToDecimal(leg.odds);
+    const payout = s * dec;
+    const profit = payout - s;
+    return { profit: round2(profit), payout: round2(payout), decimal: dec };
+}
+
+function calcMoneylineReturn(stake, odds) {
 
     const s = Number(stake);
     const o = Number(odds);
