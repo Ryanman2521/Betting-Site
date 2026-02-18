@@ -1,511 +1,578 @@
 /* ===========================
-   Playbook Prototype (Frontend):
-   - localStorage "DB"
-   - Moneyline only
-   - Single-leg betslip
+   Playbook Prototype (Merged)
+   Base: localStorage prototype (WORKING)
+   Added: optional backend auth + season/join-next (friend)
+   Toggle with USE_API
 =========================== */
 
+/* ========= CONFIG ========= */
+const USE_API = false; // ✅ set true when your backend is running
+const API_BASE = "http://localhost:3001";
+
+/* ========= API (optional) ========= */
+let token = localStorage.getItem("token") || null;
+
+async function apiRegister(username, password) {
+  const res = await fetch(`${API_BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "register failed");
+  token = data.token;
+  localStorage.setItem("token", token);
+  return data.user;
+}
+
+async function apiLogin(username, password) {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "login failed");
+  token = data.token;
+  localStorage.setItem("token", token);
+  return data.user;
+}
+
+async function apiMe() {
+  const res = await fetch(`${API_BASE}/me`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "not logged in");
+  return data.user;
+}
+
+async function apiGetNextSeason() {
+  const res = await fetch(`${API_BASE}/season/next`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "next season error");
+  return data.season;
+}
+
+async function apiJoinNextSeason() {
+  const res = await fetch(`${API_BASE}/season/join-next`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "join-next failed");
+  return data.entry;
+}
+
+/* ========= LOCAL PROTOTYPE CONSTANTS ========= */
 const STARTING_BANKROLL = 10000;
 const DAILY_WAGER_MAX = 2000;
 
 const LS_KEYS = {
-    USERS: "pb_users",
-    CURRENT: "pb_current_user",
-    BETS: "pb_bets",
-    DAILY_WAGER: "pb_daily_wager",
+  USERS: "pb_users",
+  CURRENT: "pb_current_user",
+  BETS: "pb_bets",
+  DAILY_WAGER: "pb_daily_wager",
 };
 
 const LEAGUES = [
-    { key: "NBA", name: "NBA", countTag: "Basketball" },
-    { key: "NHL", name: "NHL", countTag: "Hockey" },
-    { key: "NFL", name: "NFL", countTag: "Football" },
-    { key: "MLB", name: "MLB", countTag: "Baseball" },
-    { key: "OLY", name: "Olympics", countTag: "Global" },
+  { key: "NBA", name: "NBA", countTag: "Basketball" },
+  { key: "NHL", name: "NHL", countTag: "Hockey" },
+  { key: "NFL", name: "NFL", countTag: "Football" },
+  { key: "MLB", name: "MLB", countTag: "Baseball" },
+  { key: "OLY", name: "Olympics", countTag: "Global" },
 ];
 
 // Prototype games (hardcoded). Later: replace with API feed.
 const GAMES = [
-    {
-        id: "nba_001",
-        league: "NBA",
-        startISO: hoursFromNowISO(4),
-        home: "Lakers",
-        away: "Warriors",
-        homeOdds: -120,
-        awayOdds: +1010,
-        status: "scheduled", // scheduled | final
-        winner: null, // "home" | "away"
-    },
-    {
-        id: "nba_002",
-        league: "NBA",
-        startISO: hoursFromNowISO(9),
-        home: "Celtics",
-        away: "Bucks",
-        homeOdds: -145,
-        awayOdds: +125,
-        status: "scheduled",
-        winner: null,
-    },
-    {
-        id: "nhl_001",
-        league: "NHL",
-        startISO: hoursFromNowISO(3),
-        home: "Maple Leafs",
-        away: "Canadiens",
-        homeOdds: -155,
-        awayOdds: +135,
-        status: "scheduled",
-        winner: null,
-    },
-    {
-        id: "nfl_001",
-        league: "NFL",
-        startISO: hoursFromNowISO(28),
-        home: "Chiefs",
-        away: "Bills",
-        homeOdds: -110,
-        awayOdds: -110,
-        status: "scheduled",
-        winner: null,
-    },
-    {
-        id: "mlb_001",
-        league: "MLB",
-        startISO: hoursFromNowISO(18),
-        home: "Yankees",
-        away: "Red Sox",
-        homeOdds: -135,
-        awayOdds: +120,
-        status: "scheduled",
-        winner: null,
-    },
-    {
-        id: "oly_001",
-        league: "OLY",
-        startISO: hoursFromNowISO(40),
-        home: "Canada",
-        away: "USA",
-        homeOdds: +105,
-        awayOdds: -125,
-        status: "scheduled",
-        winner: null,
-    },
+  { id: "nba_001", league: "NBA", startISO: hoursFromNowISO(4), home: "Lakers", away: "Warriors", homeOdds: -120, awayOdds: +1010, status: "scheduled", winner: null },
+  { id: "nba_002", league: "NBA", startISO: hoursFromNowISO(9), home: "Celtics", away: "Bucks", homeOdds: -145, awayOdds: +125, status: "scheduled", winner: null },
+  { id: "nhl_001", league: "NHL", startISO: hoursFromNowISO(3), home: "Maple Leafs", away: "Canadiens", homeOdds: -155, awayOdds: +135, status: "scheduled", winner: null },
+  { id: "nfl_001", league: "NFL", startISO: hoursFromNowISO(28), home: "Chiefs", away: "Bills", homeOdds: -110, awayOdds: -110, status: "scheduled", winner: null },
+  { id: "mlb_001", league: "MLB", startISO: hoursFromNowISO(18), home: "Yankees", away: "Red Sox", homeOdds: -135, awayOdds: +120, status: "scheduled", winner: null },
+  { id: "oly_001", league: "OLY", startISO: hoursFromNowISO(40), home: "Canada", away: "USA", homeOdds: +105, awayOdds: -125, status: "scheduled", winner: null },
 ];
 
-/* ========== DOM ========== */
+/* ========= DOM ========= */
 const el = {
-    authBar: document.getElementById("authBar"),
-    authPanel: document.getElementById("authPanel"),
-    boardPanel: document.getElementById("boardPanel"),
-    betsPanel: document.getElementById("betsPanel"),
-    leaderPanel: document.getElementById("leaderPanel"),
-    notice: document.getElementById("notice"),
+  authBar: document.getElementById("authBar"),
+  authPanel: document.getElementById("authPanel"),
+  boardPanel: document.getElementById("boardPanel"),
+  betsPanel: document.getElementById("betsPanel"),
+  leaderPanel: document.getElementById("leaderPanel"),
+  notice: document.getElementById("notice"),
 
-    regUsername: document.getElementById("regUsername"),
-    regPassword: document.getElementById("regPassword"),
-    loginUsername: document.getElementById("loginUsername"),
-    loginPassword: document.getElementById("loginPassword"),
-    btnRegister: document.getElementById("btnRegister"),
-    btnLogin: document.getElementById("btnLogin"),
+  regUsername: document.getElementById("regUsername"),
+  regPassword: document.getElementById("regPassword"),
+  loginUsername: document.getElementById("loginUsername"),
+  loginPassword: document.getElementById("loginPassword"),
+  btnRegister: document.getElementById("btnRegister"),
+  btnLogin: document.getElementById("btnLogin"),
 
-    leagueList: document.getElementById("leagueList"),
-    boardTitle: document.getElementById("boardTitle"),
-    gamesList: document.getElementById("gamesList"),
-    bankrollValue: document.getElementById("bankrollValue"),
+  leagueList: document.getElementById("leagueList"),
+  boardTitle: document.getElementById("boardTitle"),
+  gamesList: document.getElementById("gamesList"),
+  bankrollValue: document.getElementById("bankrollValue"),
 
-    btnMyBets: document.getElementById("btnMyBets"),
-    btnLeaderboard: document.getElementById("btnLeaderboard"),
-    btnClearAll: document.getElementById("btnClearAll"),
+  btnMyBets: document.getElementById("btnMyBets"),
+  btnLeaderboard: document.getElementById("btnLeaderboard"),
+  btnClearAll: document.getElementById("btnClearAll"),
 
-    btnBackToBoard1: document.getElementById("btnBackToBoard1"),
-    btnBackToBoard2: document.getElementById("btnBackToBoard2"),
+  btnBackToBoard1: document.getElementById("btnBackToBoard1"),
+  btnBackToBoard2: document.getElementById("btnBackToBoard2"),
 
-    searchInput: document.getElementById("searchInput"),
+  searchInput: document.getElementById("searchInput"),
 
-    slipItems: document.getElementById("slipItems"),
-    betslipSub: document.getElementById("betslipSub"),
-    btnClearSlip: document.getElementById("btnClearSlip"),
-    stakeInput: document.getElementById("stakeInput"),
-    potentialProfit: document.getElementById("potentialProfit"),
-    potentialPayout: document.getElementById("potentialPayout"),
-    btnPlaceBet: document.getElementById("btnPlaceBet"),
+  slipItems: document.getElementById("slipItems"),
+  betslipSub: document.getElementById("betslipSub"),
+  btnClearSlip: document.getElementById("btnClearSlip"),
+  stakeInput: document.getElementById("stakeInput"),
+  potentialProfit: document.getElementById("potentialProfit"),
+  potentialPayout: document.getElementById("potentialPayout"),
+  btnPlaceBet: document.getElementById("btnPlaceBet"),
 
-    betsTbody: document.getElementById("betsTbody"),
-    leaderTbody: document.getElementById("leaderTbody"),
+  betsTbody: document.getElementById("betsTbody"),
+  leaderTbody: document.getElementById("leaderTbody"),
 
-    brandHome: document.getElementById("brandHome"),
-    legsBadge: document.getElementById("legsBadge"),
-    slipOddsLine: document.getElementById("slipOddsLine"),
+  brandHome: document.getElementById("brandHome"),
+
+  // optional UI (exists in your file)
+  legsBadge: document.getElementById("legsBadge"),
+  slipOddsLine: document.getElementById("slipOddsLine"),
 };
 
-/* ========== App State ========== */
+/* ========= APP STATE ========= */
 let activeLeague = "NBA";
-let slip = []; // array of legs: [{ gameId, league, home, away, pickSide, pickTeam, odds, startISO, placedOddsAt }]
+let slip = []; // ✅ ALWAYS an array (never null): [{ gameId, pickSide, ... }]
 let searchTerm = "";
 
-/* ========== Init ========== */
+// backend session state (optional)
+let currentUserAPI = null;
+let nextSeason = null;
+
+/* ========= INIT ========= */
 boot();
 
-function boot() {
-    ensureStorageInitialized();
-    renderAuthBar();
-    renderLeagueList();
-    bindEvents();
-    routeToDefault();
-    renderBoard();
-    renderSlip();
+async function boot() {
+  ensureStorageInitialized();
+  renderLeagueList();
+  bindEvents();
+
+  if (USE_API) {
+    await refreshSessionUI(); // uses token -> sets currentUserAPI
+  }
+
+  renderAuthBar();
+  routeToDefault();
+  renderBoard();
+  renderSlip();
 }
 
-/* ========== Storage ========== */
+/* ========= SESSION (API mode) ========= */
+async function refreshSessionUI() {
+  try {
+    if (!token) throw new Error("No token");
+    currentUserAPI = await apiMe();
+    nextSeason = await apiGetNextSeason();
+  } catch {
+    currentUserAPI = null;
+    nextSeason = null;
+  }
+}
+
+/* ========= STORAGE (local prototype) ========= */
 function ensureStorageInitialized() {
-    if (!localStorage.getItem(LS_KEYS.USERS)) localStorage.setItem(LS_KEYS.USERS, JSON.stringify([]));
-    if (!localStorage.getItem(LS_KEYS.BETS)) localStorage.setItem(LS_KEYS.BETS, JSON.stringify([]));
+  if (!localStorage.getItem(LS_KEYS.USERS)) localStorage.setItem(LS_KEYS.USERS, JSON.stringify([]));
+  if (!localStorage.getItem(LS_KEYS.BETS)) localStorage.setItem(LS_KEYS.BETS, JSON.stringify([]));
 }
 
 function loadUsers() {
-    return JSON.parse(localStorage.getItem(LS_KEYS.USERS) || "[]");
+  return JSON.parse(localStorage.getItem(LS_KEYS.USERS) || "[]");
 }
-
 function saveUsers(users) {
-    localStorage.setItem(LS_KEYS.USERS, JSON.stringify(users));
+  localStorage.setItem(LS_KEYS.USERS, JSON.stringify(users));
 }
 
 function loadBets() {
-    return JSON.parse(localStorage.getItem(LS_KEYS.BETS) || "[]");
+  return JSON.parse(localStorage.getItem(LS_KEYS.BETS) || "[]");
 }
-
 function saveBets(bets) {
-    localStorage.setItem(LS_KEYS.BETS, JSON.stringify(bets));
+  localStorage.setItem(LS_KEYS.BETS, JSON.stringify(bets));
 }
 
 function todayKey() {
-    // Local day on the user's machine (good enough for V1)
-    const d = new Date();
-    return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
 }
 
 function loadDailyWager() {
-    return JSON.parse(localStorage.getItem(LS_KEYS.DAILY_WAGER) || "{}");
+  return JSON.parse(localStorage.getItem(LS_KEYS.DAILY_WAGER) || "{}");
 }
-
 function saveDailyWager(obj) {
-    localStorage.setItem(LS_KEYS.DAILY_WAGER, JSON.stringify(obj));
+  localStorage.setItem(LS_KEYS.DAILY_WAGER, JSON.stringify(obj));
 }
-
 function getDailyWagerUsed(username) {
-    const daily = loadDailyWager();
-    const key = `${username}:${todayKey()}`;
-    return Number(daily[key] || 0);
+  const daily = loadDailyWager();
+  const key = `${username}:${todayKey()}`;
+  return Number(daily[key] || 0);
 }
-
 function addDailyWagerUsed(username, amount) {
-    const daily = loadDailyWager();
-    const key = `${username}:${todayKey()}`;
-    daily[key] = round2(Number(daily[key] || 0) + Number(amount || 0));
-    saveDailyWager(daily);
+  const daily = loadDailyWager();
+  const key = `${username}:${todayKey()}`;
+  daily[key] = round2(Number(daily[key] || 0) + Number(amount || 0));
+  saveDailyWager(daily);
 }
-
 function getDailyWagerRemaining(username) {
-    return round2(Math.max(0, DAILY_WAGER_MAX - getDailyWagerUsed(username)));
+  return round2(Math.max(0, DAILY_WAGER_MAX - getDailyWagerUsed(username)));
 }
 
 function getCurrentUsername() {
-    return localStorage.getItem(LS_KEYS.CURRENT);
+  return localStorage.getItem(LS_KEYS.CURRENT);
 }
-
 function setCurrentUsername(username) {
-    if (!username) localStorage.removeItem(LS_KEYS.CURRENT);
-    else localStorage.setItem(LS_KEYS.CURRENT, username);
+  if (!username) localStorage.removeItem(LS_KEYS.CURRENT);
+  else localStorage.setItem(LS_KEYS.CURRENT, username);
 }
-
-function getCurrentUser() {
-    const u = getCurrentUsername();
-    if (!u) return null;
-    return loadUsers().find(x => x.username === u) || null;
+function getCurrentUserLocal() {
+  const u = getCurrentUsername();
+  if (!u) return null;
+  return loadUsers().find(x => x.username === u) || null;
 }
-
 function updateUser(updatedUser) {
-    const users = loadUsers();
-    const idx = users.findIndex(u => u.username === updatedUser.username);
-    if (idx >= 0) {
-        users[idx] = updatedUser;
-        saveUsers(users);
-    }
-}
-
-/* ========== Events ========== */
-function bindEvents() {
-    el.brandHome.addEventListener("click", () => showPanel("board"));
-
-    el.btnRegister.addEventListener("click", onRegister);
-    el.btnLogin.addEventListener("click", onLogin);
-
-    el.btnMyBets.addEventListener("click", () => showPanel("bets"));
-    el.btnLeaderboard.addEventListener("click", () => showPanel("leader"));
-    el.btnClearAll.addEventListener("click", onResetPrototype);
-
-    el.btnBackToBoard1.addEventListener("click", () => showPanel("board"));
-    el.btnBackToBoard2.addEventListener("click", () => showPanel("board"));
-
-    el.btnClearSlip.addEventListener("click", () => {
-        slip = [];
-        el.stakeInput.value = "";
-        renderSlip();
-        renderBoard(); // remove odds active highlight
-    });
-
-    el.stakeInput.addEventListener("input", () => renderSlipTotals());
-    el.btnPlaceBet.addEventListener("click", onPlaceBet);
-
-    el.searchInput.addEventListener("input", (e) => {
-        searchTerm = (e.target.value || "").trim().toLowerCase();
-        renderBoard();
-    });
-}
-
-/* ========== Auth ========== */
-function onRegister() {
-    const username = (el.regUsername.value || "").trim();
-    const password = (el.regPassword.value || "").trim();
-
-    if (!username || !password) return toast("Enter a username and password.", "warn");
-
-    const users = loadUsers();
-    if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
-        return toast("Username already exists. Pick another.", "warn");
-    }
-
-    // Prototype: store password in plain text (NOT OK for real).
-    // Real version: backend + bcrypt.
-    const newUser = {
-        username,
-        password,
-        bankroll: STARTING_BANKROLL,
-        createdAt: new Date().toISOString(),
-    };
-
-    users.push(newUser);
+  const users = loadUsers();
+  const idx = users.findIndex(u => u.username === updatedUser.username);
+  if (idx >= 0) {
+    users[idx] = updatedUser;
     saveUsers(users);
-    setCurrentUsername(username);
-
-    el.regUsername.value = "";
-    el.regPassword.value = "";
-
-    toast(`Account created. Bankroll credited: ${fmtMoney(STARTING_BANKROLL)}.`, "ok");
-    renderAuthBar();
-    routeToDefault();
-    renderBoard();
+  }
 }
 
-function onLogin() {
-    const username = (el.loginUsername.value || "").trim();
-    const password = (el.loginPassword.value || "").trim();
+/* ========= “WHO IS LOGGED IN?” (single source) ========= */
+function getUser() {
+  if (USE_API) return currentUserAPI;
+  return getCurrentUserLocal();
+}
+function getUsername() {
+  const u = getUser();
+  return u ? u.username : null;
+}
 
-    if (!username || !password) return toast("Enter your username and password.", "warn");
+/* ========= EVENTS ========= */
+function bindEvents() {
+  el.brandHome?.addEventListener("click", () => showPanel("board"));
 
-    const user = loadUsers().find(u => u.username === username);
-    if (!user || user.password !== password) {
-        return toast("Invalid login.", "warn");
-    }
+  el.btnRegister.addEventListener("click", onRegister);
+  el.btnLogin.addEventListener("click", onLogin);
 
-    setCurrentUsername(username);
+  el.btnMyBets.addEventListener("click", () => showPanel("bets"));
+  el.btnLeaderboard.addEventListener("click", () => showPanel("leader"));
+  el.btnClearAll.addEventListener("click", onResetPrototype);
 
-    el.loginUsername.value = "";
-    el.loginPassword.value = "";
+  el.btnBackToBoard1.addEventListener("click", () => showPanel("board"));
+  el.btnBackToBoard2.addEventListener("click", () => showPanel("board"));
 
-    toast(`Welcome back, ${username}.`, "ok");
-    renderAuthBar();
-    routeToDefault();
+  el.btnClearSlip.addEventListener("click", () => {
+    slip = [];
+    el.stakeInput.value = "";
+    renderSlip();
     renderBoard();
+  });
+
+  el.stakeInput.addEventListener("input", () => renderSlipTotals());
+  el.btnPlaceBet.addEventListener("click", onPlaceBet);
+
+  el.searchInput.addEventListener("input", (e) => {
+    searchTerm = (e.target.value || "").trim().toLowerCase();
+    renderBoard();
+  });
+}
+
+/* ========= AUTH (merged) ========= */
+async function onRegister() {
+  const username = (el.regUsername.value || "").trim();
+  const password = (el.regPassword.value || "").trim();
+  if (!username || !password) return toast("Enter a username and password.", "warn");
+
+  if (USE_API) {
+    try {
+      const user = await apiRegister(username, password);
+      el.regUsername.value = "";
+      el.regPassword.value = "";
+      toast(`Account created: @${user.username}`, "ok");
+      await refreshSessionUI();
+      renderAuthBar();
+      routeToDefault();
+      renderBoard();
+      renderSlip();
+    } catch (err) {
+      toast(err.message || "Register failed.", "warn");
+    }
+    return;
+  }
+
+  // local prototype register
+  const users = loadUsers();
+  if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+    return toast("Username already exists. Pick another.", "warn");
+  }
+
+  const newUser = { username, password, bankroll: STARTING_BANKROLL, createdAt: new Date().toISOString() };
+  users.push(newUser);
+  saveUsers(users);
+  setCurrentUsername(username);
+
+  el.regUsername.value = "";
+  el.regPassword.value = "";
+
+  toast(`Account created. Bankroll credited: ${fmtMoney(STARTING_BANKROLL)}.`, "ok");
+  renderAuthBar();
+  routeToDefault();
+  renderBoard();
+}
+
+async function onLogin() {
+  const username = (el.loginUsername.value || "").trim();
+  const password = (el.loginPassword.value || "").trim();
+  if (!username || !password) return toast("Enter your username and password.", "warn");
+
+  if (USE_API) {
+    try {
+      const user = await apiLogin(username, password);
+      el.loginUsername.value = "";
+      el.loginPassword.value = "";
+      toast(`Welcome back, @${user.username}.`, "ok");
+      await refreshSessionUI();
+      renderAuthBar();
+      routeToDefault();
+      renderBoard();
+      renderSlip();
+    } catch (err) {
+      toast(err.message || "Login failed.", "warn");
+    }
+    return;
+  }
+
+  // local prototype login
+  const user = loadUsers().find(u => u.username === username);
+  if (!user || user.password !== password) return toast("Invalid login.", "warn");
+
+  setCurrentUsername(username);
+  el.loginUsername.value = "";
+  el.loginPassword.value = "";
+
+  toast(`Welcome back, ${username}.`, "ok");
+  renderAuthBar();
+  routeToDefault();
+  renderBoard();
 }
 
 function logout() {
+  if (USE_API) {
+    localStorage.removeItem("token");
+    token = null;
+    currentUserAPI = null;
+    nextSeason = null;
+  } else {
     setCurrentUsername(null);
-    slip = [];
-    el.stakeInput.value = "";
-    toast("Logged out.", "ok");
-    renderAuthBar();
-    routeToDefault();
-    renderBoard();
-    renderSlip();
+  }
+
+  slip = [];
+  el.stakeInput.value = "";
+  toast("Logged out.", "ok");
+  renderAuthBar();
+  routeToDefault();
+  renderBoard();
+  renderSlip();
 }
 
-function renderAuthBar() {
-    const user = getCurrentUser();
-    el.authBar.innerHTML = "";
+async function renderAuthBar() {
+  const user = getUser();
+  el.authBar.innerHTML = "";
 
-    if (!user) {
-        const b1 = mkBtn("ghostBtn", "Log in", () => showPanel("auth"));
-        const b2 = mkBtn("primaryBtn", "Create account", () => showPanel("auth"));
-        el.authBar.append(b1, b2);
-        return;
-    }
+  if (!user) {
+    const b1 = mkBtn("ghostBtn", "Log in", () => showPanel("auth"));
+    const b2 = mkBtn("primaryBtn", "Create account", () => showPanel("auth"));
+    el.authBar.append(b1, b2);
+    return;
+  }
 
-    const chip = document.createElement("div");
-    chip.className = "pill";
-    chip.textContent = `@${user.username}`;
+  const chip = document.createElement("div");
+  chip.className = "pill";
+  chip.textContent = `@${user.username}`;
 
-    const bank = document.createElement("div");
-    bank.className = "pill";
-    bank.textContent = `Bankroll: ${fmtMoney(user.bankroll)}`;
+  // bankroll display:
+  // - API mode: you might have bankroll on user or on an entry (depends on your backend). We default to user.bankroll if present.
+  // - Local mode: user.bankroll always exists.
+  const bankVal = Number(user.bankroll ?? user.balance ?? user.points ?? user.bankroll) || 0;
 
-    const daily = document.createElement("div");
-    daily.className = "pill";
-    daily.textContent = `Daily remaining: ${fmtMoney(getDailyWagerRemaining(user.username))}`;
+  const bank = document.createElement("div");
+  bank.className = "pill";
+  bank.textContent = `Bankroll: ${fmtMoney(bankVal)}`;
 
-    const out = mkBtn("ghostBtn", "Logout", logout);
-    el.authBar.append(chip, bank, daily, out);
+  const daily = document.createElement("div");
+  daily.className = "pill";
+  daily.textContent = `Daily remaining: ${fmtMoney(getDailyWagerRemaining(user.username))}`;
+
+  el.authBar.append(chip, bank, daily);
+
+  // friend feature: join next month (API only)
+  if (USE_API) {
+    const joinNextBtn = mkBtn("primaryBtn", "Join Next Month ($10)", async () => {
+      try {
+        await apiJoinNextSeason();
+        toast("Signed up for next tournament!", "ok");
+      } catch (err) {
+        toast(err.message || "Join failed.", "warn");
+      }
+    });
+    el.authBar.append(joinNextBtn);
+  }
+
+  const out = mkBtn("ghostBtn", "Logout", logout);
+  el.authBar.append(out);
 }
 
-/* ========== Panels / Routing ========== */
+/* ========= PANELS / ROUTING ========= */
 function routeToDefault() {
-    const user = getCurrentUser();
-    if (!user) showPanel("auth");
-    else showPanel("board");
+  const user = getUser();
+  if (!user) showPanel("auth");
+  else showPanel("board");
 }
 
 function showPanel(which) {
-    const user = getCurrentUser();
-    // If not logged in, always show auth.
-    if (!user && which !== "auth") which = "auth";
+  const user = getUser();
+  if (!user && which !== "auth") which = "auth";
 
-    el.authPanel.hidden = which !== "auth";
-    el.boardPanel.hidden = which !== "board";
-    el.betsPanel.hidden = which !== "bets";
-    el.leaderPanel.hidden = which !== "leader";
+  el.authPanel.hidden = which !== "auth";
+  el.boardPanel.hidden = which !== "board";
+  el.betsPanel.hidden = which !== "bets";
+  el.leaderPanel.hidden = which !== "leader";
 
-    if (which === "bets") renderBetsTable();
-    if (which === "leader") renderLeaderboard();
-    if (which === "board") renderBoard();
+  if (which === "bets") renderBetsTable();
+  if (which === "leader") renderLeaderboard();
+  if (which === "board") renderBoard();
 }
 
-/* ========== Leagues / Board ========== */
+/* ========= LEAGUES / BOARD ========= */
 function renderLeagueList() {
-    el.leagueList.innerHTML = "";
+  el.leagueList.innerHTML = "";
 
-    for (const lg of LEAGUES) {
-        const btn = document.createElement("button");
-        btn.className = "leagueBtn" + (lg.key === activeLeague ? " active" : "");
-        btn.type = "button";
+  for (const lg of LEAGUES) {
+    const btn = document.createElement("button");
+    btn.className = "leagueBtn" + (lg.key === activeLeague ? " active" : "");
+    btn.type = "button";
 
-        const left = document.createElement("div");
-        left.style.display = "flex";
-        left.style.flexDirection = "column";
-        left.style.gap = "2px";
+    const left = document.createElement("div");
+    left.style.display = "flex";
+    left.style.flexDirection = "column";
+    left.style.gap = "2px";
 
-        const name = document.createElement("div");
-        name.style.fontWeight = "900";
-        name.textContent = lg.name;
+    const name = document.createElement("div");
+    name.style.fontWeight = "900";
+    name.textContent = lg.name;
 
-        const sub = document.createElement("div");
-        sub.style.fontSize = "12px";
-        sub.style.color = "var(--muted)";
-        sub.textContent = "Moneyline";
+    const sub = document.createElement("div");
+    sub.style.fontSize = "12px";
+    sub.style.color = "var(--muted)";
+    sub.textContent = "Moneyline";
 
-        left.append(name, sub);
+    left.append(name, sub);
 
-        const tag = document.createElement("div");
-        tag.className = "leagueTag";
-        tag.textContent = lg.countTag;
+    const tag = document.createElement("div");
+    tag.className = "leagueTag";
+    tag.textContent = lg.countTag;
 
-        btn.append(left, tag);
-        btn.addEventListener("click", () => {
-            activeLeague = lg.key;
-            renderLeagueList();
-            renderBoard();
-        });
+    btn.append(left, tag);
+    btn.addEventListener("click", () => {
+      activeLeague = lg.key;
+      renderLeagueList();
+      renderBoard();
+    });
 
-        el.leagueList.appendChild(btn);
-    }
+    el.leagueList.appendChild(btn);
+  }
 }
 
 function renderBoard() {
-    const user = getCurrentUser();
-    if (!user) return;
+  const user = getUser();
+  if (!user) return;
 
-    el.boardTitle.textContent = searchTerm
-        ? `Search Results — Moneyline`
-        : `${leagueName(activeLeague)} — Moneyline`; el.bankrollValue.textContent = fmtMoney(user.bankroll);
+  el.boardTitle.textContent = searchTerm
+    ? `Search Results — Moneyline`
+    : `${leagueName(activeLeague)} — Moneyline`;
 
-    const base = searchTerm
-        ? GAMES // search across ALL leagues if you typed something
-        : GAMES.filter(g => g.league === activeLeague);
+  const bankVal = Number(user.bankroll ?? user.balance ?? user.points ?? 0) || 0;
+  el.bankrollValue.textContent = fmtMoney(bankVal);
 
-    const filtered = base.filter(g => {
-        if (!searchTerm) return true;
-        const hay = `${g.home} ${g.away} ${g.league}`.toLowerCase();
-        return hay.includes(searchTerm);
-    });
+  const base = searchTerm ? GAMES : GAMES.filter(g => g.league === activeLeague);
 
-    el.gamesList.innerHTML = "";
+  const filtered = base.filter(g => {
+    if (!searchTerm) return true;
+    const hay = `${g.home} ${g.away} ${g.league}`.toLowerCase();
+    return hay.includes(searchTerm);
+  });
 
-    if (filtered.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "card";
-        empty.innerHTML = `<div style="font-weight:900;">No games found</div>
-                       <div class="muted small">Try another league or clear search.</div>`;
-        el.gamesList.appendChild(empty);
-        return;
-    }
+  el.gamesList.innerHTML = "";
 
-    for (const g of filtered) {
-        const row = document.createElement("div");
-        row.className = "gameRow";
+  if (filtered.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "card";
+    empty.innerHTML = `<div style="font-weight:900;">No games found</div>
+      <div class="muted small">Try another league or clear search.</div>`;
+    el.gamesList.appendChild(empty);
+    return;
+  }
 
-        const match = document.createElement("div");
-        match.className = "match";
-        match.innerHTML = `
+  for (const g of filtered) {
+    const row = document.createElement("div");
+    row.className = "gameRow";
+
+    const match = document.createElement("div");
+    match.className = "match";
+    match.innerHTML = `
       <div class="matchMain">${g.home} vs ${g.away}</div>
       <div class="matchSub">${g.status === "final" ? `Final — Winner: ${g.winner === "home" ? g.home : g.away}` : "Scheduled"}</div>
     `;
 
-        const start = document.createElement("div");
-        start.className = "startTime";
-        start.textContent = prettyTime(g.startISO);
+    const start = document.createElement("div");
+    start.className = "startTime";
+    start.textContent = prettyTime(g.startISO);
 
-        const homeBtn = oddsButton({
-            game: g,
-            side: "home",
-            team: g.home,
-            odds: g.homeOdds,
-        });
+    const homeBtn = oddsButton({ game: g, side: "home", team: g.home, odds: g.homeOdds });
+    const awayBtn = oddsButton({ game: g, side: "away", team: g.away, odds: g.awayOdds });
 
-        const awayBtn = oddsButton({
-            game: g,
-            side: "away",
-            team: g.away,
-            odds: g.awayOdds,
-        });
+    const settle = document.createElement("div");
+    settle.className = "settleWrap";
 
-        const settle = document.createElement("div");
-        settle.className = "settleWrap";
-        const homeWin = document.createElement("button");
-        homeWin.className = "settleBtn home";
-        homeWin.textContent = "Home Win";
-        homeWin.addEventListener("click", () => settleGame(g.id, "home"));
+    const homeWin = document.createElement("button");
+    homeWin.className = "settleBtn home";
+    homeWin.textContent = "Home Win";
+    homeWin.addEventListener("click", () => settleGame(g.id, "home"));
 
-        const awayWin = document.createElement("button");
-        awayWin.className = "settleBtn away";
-        awayWin.textContent = "Away Win";
-        awayWin.addEventListener("click", () => settleGame(g.id, "away"));
+    const awayWin = document.createElement("button");
+    awayWin.className = "settleBtn away";
+    awayWin.textContent = "Away Win";
+    awayWin.addEventListener("click", () => settleGame(g.id, "away"));
 
-        settle.append(homeWin, awayWin);
+    settle.append(homeWin, awayWin);
 
-        row.append(match, start, homeBtn, awayBtn, settle);
-        el.gamesList.appendChild(row);
-    }
+    row.append(match, start, homeBtn, awayBtn, settle);
+    el.gamesList.appendChild(row);
+  }
 }
 
 function oddsButton({ game, side, team, odds }) {
-    const btn = document.createElement("button");
-    btn.className = "oddsBtn";
-    btn.type = "button";
+  const btn = document.createElement("button");
+  btn.className = "oddsBtn";
+  btn.type = "button";
 
-    const isActive = slip.some(l => l.gameId === game.id && l.pickSide === side);
-    if (isActive) btn.classList.add("active");
+  const isActive = slip.some(l => l.gameId === game.id && l.pickSide === side);
+  if (isActive) btn.classList.add("active");
 
-    btn.innerHTML = `
+  btn.innerHTML = `
     <div class="oddsTop">
       <div class="team">${team}</div>
       <div class="oddsVal">${fmtOdds(odds)}</div>
@@ -513,569 +580,541 @@ function oddsButton({ game, side, team, odds }) {
     <div class="oddsSmall">${side === "home" ? "Home" : "Away"} • Moneyline</div>
   `;
 
-    btn.addEventListener("click", () => {
-        const user = getCurrentUser();
-        if (!user) return toast("Log in to bet.", "warn");
+  btn.addEventListener("click", () => {
+    const user = getUser();
+    if (!user) return toast("Log in to bet.", "warn");
 
-        if (game.status === "final") return toast("Game is already finished.", "warn");
-        if (Date.now() >= new Date(game.startISO).getTime()) {
-            return toast("Betting closed (game started).", "warn");
-        }
+    if (game.status === "final") return toast("Game is already finished.", "warn");
+    if (Date.now() >= new Date(game.startISO).getTime()) return toast("Betting closed (game started).", "warn");
 
-        const legKey = `${game.id}:${side}`;
-        const existingIdx = slip.findIndex(l => `${l.gameId}:${l.pickSide}` === legKey);
+    const legKey = `${game.id}:${side}`;
+    const existingIdx = slip.findIndex(l => `${l.gameId}:${l.pickSide}` === legKey);
 
-        if (existingIdx >= 0) {
-            // Remove leg if already selected
-            slip.splice(existingIdx, 1);
-        } else {
-            // Add leg
-            slip.push({
-                gameId: game.id,
-                league: game.league,
-                home: game.home,
-                away: game.away,
-                pickSide: side,
-                pickTeam: team,
-                odds,
-                startISO: game.startISO,
-                placedOddsAt: new Date().toISOString(),
-            });
-        }
+    if (existingIdx >= 0) slip.splice(existingIdx, 1);
+    else {
+      slip.push({
+        gameId: game.id,
+        league: game.league,
+        home: game.home,
+        away: game.away,
+        pickSide: side,
+        pickTeam: team,
+        odds,
+        startISO: game.startISO,
+        placedOddsAt: new Date().toISOString(),
+      });
+    }
 
-        renderBoard();
-        renderSlip();
-    });
+    renderBoard();
+    renderSlip();
+  });
 
-    return btn;
+  return btn;
 }
 
-/* ========== Betslip ========== */
+/* ========= BETSLIP ========= */
 function renderSlip() {
-    const user = getCurrentUser();
+  const user = getUser();
+  el.slipItems.innerHTML = "";
 
-    el.slipItems.innerHTML = "";
+  if (slip.length === 0) el.betslipSub.textContent = "Pick odds to start.";
+  else if (slip.length === 1) el.betslipSub.textContent = "Single bet (moneyline)";
+  else el.betslipSub.textContent = `Parlay (${slip.length} legs)`;
 
-    // Subtitle
-    if (slip.length === 0) {
-        el.betslipSub.textContent = "Pick odds to start.";
-    } else if (slip.length === 1) {
-        el.betslipSub.textContent = "Single bet (moneyline)";
-    } else {
-        el.betslipSub.textContent = `Parlay (${slip.length} legs)`;
-    }
+  if (slip.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "card";
+    empty.innerHTML = `<div style="font-weight:900;">No selection</div>
+      <div class="muted small">Click an odds button to add it here.</div>`;
+    el.slipItems.appendChild(empty);
+    el.btnPlaceBet.disabled = true;
+    renderSlipTotals();
+    return;
+  }
 
-    // Empty state
-    if (slip.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "card";
-        empty.innerHTML = `<div style="font-weight:900;">No selection</div>
-                       <div class="muted small">Click an odds button to add it here.</div>`;
-        el.slipItems.appendChild(empty);
-        el.btnPlaceBet.disabled = true;
-        renderSlipTotals();
-        return;
-    }
+  const clearWrap = document.createElement("div");
+  clearWrap.style.display = "flex";
+  clearWrap.style.justifyContent = "space-between";
+  clearWrap.style.alignItems = "center";
+  clearWrap.style.marginBottom = "8px";
 
-    // Clear all button row
-    const clearWrap = document.createElement("div");
-    clearWrap.style.display = "flex";
-    clearWrap.style.justifyContent = "space-between";
-    clearWrap.style.alignItems = "center";
-    clearWrap.style.marginBottom = "8px";
+  const left = document.createElement("div");
+  left.className = "muted small";
+  left.textContent = slip.length === 1 ? "1 selection" : `${slip.length} selections`;
 
-    const left = document.createElement("div");
-    left.className = "muted small";
-    left.textContent = slip.length === 1 ? "1 selection" : `${slip.length} selections`;
+  const clearBtn = document.createElement("button");
+  clearBtn.className = "ghostBtn";
+  clearBtn.textContent = "Clear all";
+  clearBtn.addEventListener("click", () => {
+    slip = [];
+    el.stakeInput.value = "";
+    renderSlip();
+    renderBoard();
+  });
 
-    const clearBtn = document.createElement("button");
-    clearBtn.className = "ghostBtn";
-    clearBtn.textContent = "Clear all";
-    clearBtn.addEventListener("click", () => {
-        slip = [];
-        el.stakeInput.value = "";
-        renderSlip();
-        renderBoard();
+  clearWrap.append(left, clearBtn);
+  el.slipItems.appendChild(clearWrap);
+
+  for (const leg of slip) {
+    const card = document.createElement("div");
+    card.className = "slipCard";
+
+    const top = document.createElement("div");
+    top.className = "slipTop";
+
+    const pick = document.createElement("div");
+    pick.className = "slipPick";
+    pick.textContent = `${leg.pickTeam} ML`;
+
+    const x = document.createElement("button");
+    x.className = "xBtn";
+    x.textContent = "Remove";
+    x.addEventListener("click", () => {
+      slip = slip.filter(l => !(l.gameId === leg.gameId && l.pickSide === leg.pickSide));
+      renderSlip();
+      renderBoard();
     });
 
-    clearWrap.append(left, clearBtn);
-    el.slipItems.appendChild(clearWrap);
+    top.append(pick, x);
 
-    // Legs list
-    for (const leg of slip) {
-        const card = document.createElement("div");
-        card.className = "slipCard";
-
-        const top = document.createElement("div");
-        top.className = "slipTop";
-
-        const pick = document.createElement("div");
-        pick.className = "slipPick";
-        pick.textContent = `${leg.pickTeam} ML`;
-
-        const x = document.createElement("button");
-        x.className = "xBtn";
-        x.textContent = "Remove";
-        x.addEventListener("click", () => {
-            slip = slip.filter(l => !(l.gameId === leg.gameId && l.pickSide === leg.pickSide));
-            renderSlip();
-            renderBoard();
-        });
-
-        top.append(pick, x);
-
-        const meta = document.createElement("div");
-        meta.className = "slipMeta";
-        meta.innerHTML = `
+    const meta = document.createElement("div");
+    meta.className = "slipMeta";
+    meta.innerHTML = `
       <div>${leagueName(leg.league)} • ${leg.home} vs ${leg.away}</div>
       <div>Odds: <b>${fmtOdds(leg.odds)}</b> • Start: ${prettyTime(leg.startISO)}</div>
     `;
 
-        card.append(top, meta);
-        el.slipItems.appendChild(card);
-    }
+    card.append(top, meta);
+    el.slipItems.appendChild(card);
+  }
 
-    // Enable place bet if logged in and stake valid
-    el.btnPlaceBet.disabled = !user;
-    renderSlipTotals();
-
-    // NEW: keep badge updated even before stake is entered
-    renderSlipMeta();
+  el.btnPlaceBet.disabled = !user;
+  renderSlipTotals();
+  renderSlipMeta();
 }
 
 function renderSlipTotals() {
-    const stake = Number(el.stakeInput.value || 0);
+  const stake = Number(el.stakeInput.value || 0);
 
-    if (slip.length === 0 || !stake || stake <= 0) {
-        el.potentialProfit.textContent = fmtMoney(0);
-        el.potentialPayout.textContent = fmtMoney(0);
-        el.btnPlaceBet.disabled = true;
+  if (slip.length === 0 || !stake || stake <= 0) {
+    el.potentialProfit.textContent = fmtMoney(0);
+    el.potentialPayout.textContent = fmtMoney(0);
+    el.btnPlaceBet.disabled = true;
 
-        el.legsBadge.hidden = true;
-        el.slipOddsLine.hidden = true;
+    if (el.legsBadge) el.legsBadge.hidden = true;
+    if (el.slipOddsLine) el.slipOddsLine.hidden = true;
+    return;
+  }
 
-        return;
-    }
+  const user = getUser();
+  if (!user) {
+    el.btnPlaceBet.disabled = true;
+    return;
+  }
 
-    const user = getCurrentUser();
-    if (!user) {
-        el.btnPlaceBet.disabled = true;
-        return;
-    }
+  let profit = 0;
+  let payout = 0;
 
-    let profit = 0;
-    let payout = 0;
+  if (slip.length === 1) ({ profit, payout } = calcMoneylineReturn(stake, slip[0].odds));
+  else ({ profit, payout } = calcParlayReturn(stake, slip));
 
-    if (slip.length === 1) {
-        ({ profit, payout } = calcMoneylineReturn(stake, slip[0].odds));
-    } else {
-        ({ profit, payout } = calcParlayReturn(stake, slip));
-    }
+  el.potentialProfit.textContent = fmtMoney(profit);
+  el.potentialPayout.textContent = fmtMoney(payout);
 
-    el.potentialProfit.textContent = fmtMoney(profit);
-    el.potentialPayout.textContent = fmtMoney(payout);
+  const bankVal = Number(user.bankroll ?? user.balance ?? user.points ?? 0) || 0;
+  el.btnPlaceBet.disabled = stake > bankVal;
 
-    // disable if insufficient funds
-    el.btnPlaceBet.disabled = stake > user.bankroll;
-
+  if (el.legsBadge) {
     el.legsBadge.hidden = false;
     el.legsBadge.textContent = String(slip.length);
+  }
 
+  if (el.slipOddsLine) {
     const combined = calcCombinedAmericanOdds(slip);
     el.slipOddsLine.hidden = false;
     el.slipOddsLine.textContent =
-        slip.length === 1
-            ? `Odds: ${fmtOdds(combined)} • 1 leg`
-            : `Parlay Odds: ${fmtOdds(combined)} • ${slip.length} legs`;
+      slip.length === 1
+        ? `Odds: ${fmtOdds(combined)} • 1 leg`
+        : `Parlay Odds: ${fmtOdds(combined)} • ${slip.length} legs`;
+  }
 }
 
 function renderSlipMeta() {
-    // badge count
-    if (slip.length === 0) {
-        el.legsBadge.hidden = true;
-        el.slipOddsLine.hidden = true;
-        return;
-    }
+  if (!el.legsBadge || !el.slipOddsLine) return;
 
-    el.legsBadge.hidden = false;
-    el.legsBadge.textContent = String(slip.length);
+  if (slip.length === 0) {
+    el.legsBadge.hidden = true;
+    el.slipOddsLine.hidden = true;
+    return;
+  }
 
-    const combined = calcCombinedAmericanOdds(slip);
-    el.slipOddsLine.hidden = false;
-    el.slipOddsLine.textContent =
-        slip.length === 1
-            ? `Odds: ${fmtOdds(combined)} • 1 leg`
-            : `Parlay Odds: ${fmtOdds(combined)} • ${slip.length} legs`;
+  el.legsBadge.hidden = false;
+  el.legsBadge.textContent = String(slip.length);
+
+  const combined = calcCombinedAmericanOdds(slip);
+  el.slipOddsLine.hidden = false;
+  el.slipOddsLine.textContent =
+    slip.length === 1
+      ? `Odds: ${fmtOdds(combined)} • 1 leg`
+      : `Parlay Odds: ${fmtOdds(combined)} • ${slip.length} legs`;
 }
 
-/* ========== Place Bet ========== */
+/* ========= PLACE BET ========= */
 function onPlaceBet() {
-    const user = getCurrentUser();
-    if (!user) return toast("Log in to place a bet.", "warn");
-    if (!slip || slip.length === 0) return toast("Pick odds first.", "warn");
+  const user = getUser();
+  if (!user) return toast("Log in to place a bet.", "warn");
+  if (!slip || slip.length === 0) return toast("Pick odds first.", "warn");
 
-    const stake = Number(el.stakeInput.value || 0);
-    if (!Number.isFinite(stake) || stake <= 0) return toast("Enter a valid stake.", "warn");
-    if (stake > user.bankroll) return toast("Insufficient bankroll.", "warn");
+  const stake = Number(el.stakeInput.value || 0);
+  if (!Number.isFinite(stake) || stake <= 0) return toast("Enter a valid stake.", "warn");
 
-    const remaining = getDailyWagerRemaining(user.username);
-    if (stake > remaining) {
-        return toast(`Daily max is ${fmtMoney(DAILY_WAGER_MAX)}. Remaining today: ${fmtMoney(remaining)}.`, "warn");
-    }
+  const bankVal = Number(user.bankroll ?? user.balance ?? user.points ?? 0) || 0;
+  if (stake > bankVal) return toast("Insufficient bankroll.", "warn");
 
-    // Validate all legs
-    for (const leg of slip) {
-        const game = GAMES.find(g => g.id === leg.gameId);
-        if (!game) return toast("Game not found.", "warn");
-        if (game.status === "final") return toast("One of your games is already final.", "warn");
-        if (Date.now() >= new Date(game.startISO).getTime()) {
-            return toast("Betting closed (a game started).", "warn");
-        }
-    }
+  const remaining = getDailyWagerRemaining(user.username);
+  if (stake > remaining) {
+    return toast(`Daily max is ${fmtMoney(DAILY_WAGER_MAX)}. Remaining today: ${fmtMoney(remaining)}.`, "warn");
+  }
 
-    // Deduct stake immediately
+  // Validate all legs
+  for (const leg of slip) {
+    const game = GAMES.find(g => g.id === leg.gameId);
+    if (!game) return toast("Game not found.", "warn");
+    if (game.status === "final") return toast("One of your games is already final.", "warn");
+    if (Date.now() >= new Date(game.startISO).getTime()) return toast("Betting closed (a game started).", "warn");
+  }
+
+  // Local prototype bankroll deduction only (API bankroll needs server endpoint)
+  if (!USE_API) {
     user.bankroll -= stake;
     user.bankroll = round2(user.bankroll);
     updateUser(user);
-    addDailyWagerUsed(user.username, stake);
+  }
+  addDailyWagerUsed(user.username, stake);
 
-    const betType = slip.length >= 2 ? "parlay" : "single";
+  const betType = slip.length >= 2 ? "parlay" : "single";
 
-    const bet = {
-        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
-        username: user.username,
-        type: betType,
-        placedAt: new Date().toISOString(),
-        stake: round2(stake),
-        status: "open",
-        payout: 0,
+  const bet = {
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
+    username: user.username,
+    type: betType,
+    placedAt: new Date().toISOString(),
+    stake: round2(stake),
+    status: "open",
+    payout: 0,
+    legs: slip.map(l => ({
+      gameId: l.gameId,
+      league: l.league,
+      home: l.home,
+      away: l.away,
+      pickSide: l.pickSide,
+      pickTeam: l.pickTeam,
+      odds: l.odds,
+      startISO: l.startISO,
+      result: "open",
+    })),
+  };
 
-        // Snapshot of legs at placement time
-        legs: slip.map(l => ({
-            gameId: l.gameId,
-            league: l.league,
-            home: l.home,
-            away: l.away,
-            pickSide: l.pickSide,
-            pickTeam: l.pickTeam,
-            odds: l.odds,
-            startISO: l.startISO,
-            result: "open", // open | won | lost
-        })),
-    };
+  const bets = loadBets();
+  bets.unshift(bet);
+  saveBets(bets);
 
-    const bets = loadBets();
-    bets.unshift(bet);
-    saveBets(bets);
+  toast(
+    bet.type === "parlay"
+      ? `Parlay placed: ${bet.legs.length} legs for ${fmtMoney(bet.stake)}.`
+      : `Bet placed: ${bet.legs[0].pickTeam} ${fmtOdds(bet.legs[0].odds)} for ${fmtMoney(bet.stake)}.`,
+    "ok"
+  );
 
-    toast(
-        bet.type === "parlay"
-            ? `Parlay placed: ${bet.legs.length} legs for ${fmtMoney(bet.stake)}.`
-            : `Bet placed: ${bet.legs[0].pickTeam} ${fmtOdds(bet.legs[0].odds)} for ${fmtMoney(bet.stake)}.`,
-        "ok"
-    );
-
-    // Clear slip
-    slip = [];
-    el.stakeInput.value = "";
-    renderAuthBar();
-    renderBoard();
-    renderSlip();
+  slip = [];
+  el.stakeInput.value = "";
+  renderAuthBar();
+  renderBoard();
+  renderSlip();
 }
 
-/* ========== Settlement (Prototype) ========== */
+/* ========= SETTLEMENT (prototype) ========= */
 function settleGame(gameId, winnerSide) {
-    const user = getCurrentUser();
-    if (!user) return toast("Log in first.", "warn");
+  const user = getUser();
+  if (!user) return toast("Log in first.", "warn");
 
-    const game = GAMES.find(g => g.id === gameId);
-    if (!game) return toast("Game not found.", "warn");
+  const game = GAMES.find(g => g.id === gameId);
+  if (!game) return toast("Game not found.", "warn");
+  if (game.status === "final") return toast("Already settled.", "warn");
 
-    if (game.status === "final") return toast("Already settled.", "warn");
+  game.status = "final";
+  game.winner = winnerSide;
 
-    game.status = "final";
-    game.winner = winnerSide;
+  const bets = loadBets();
+  let changed = 0;
 
-    const bets = loadBets();
-    let changed = 0;
+  for (const bet of bets) {
+    if (bet.status !== "open") continue;
 
-    for (const bet of bets) {
-        if (bet.status !== "open") continue;
+    if (bet.type === "single") {
+      const leg = bet.legs && bet.legs[0];
+      if (!leg || leg.gameId !== gameId) continue;
 
-        // SINGLE
-        if (bet.type === "single") {
-            const leg = bet.legs && bet.legs[0];
-            if (!leg || leg.gameId !== gameId) continue;
+      if (leg.pickSide === winnerSide) {
+        const { payout } = calcMoneylineReturn(bet.stake, leg.odds);
+        bet.status = "won";
+        bet.payout = round2(payout);
 
-            if (leg.pickSide === winnerSide) {
-                const { payout } = calcMoneylineReturn(bet.stake, leg.odds);
-                bet.status = "won";
-                bet.payout = round2(payout);
-
-                const u = loadUsers().find(x => x.username === bet.username);
-                if (u) {
-                    u.bankroll = round2(u.bankroll + payout);
-                    updateUser(u);
-                }
-            } else {
-                bet.status = "lost";
-                bet.payout = 0;
-            }
-
-            changed++;
-            continue;
+        // Only credit bankroll locally in local mode
+        if (!USE_API) {
+          const u = loadUsers().find(x => x.username === bet.username);
+          if (u) {
+            u.bankroll = round2(u.bankroll + payout);
+            updateUser(u);
+          }
         }
+      } else {
+        bet.status = "lost";
+        bet.payout = 0;
+      }
 
-        // PARLAY
-        if (bet.type === "parlay") {
-            const leg = bet.legs.find(l => l.gameId === gameId);
-            if (!leg) continue;
-
-            // mark this leg result
-            leg.result = (leg.pickSide === winnerSide) ? "won" : "lost";
-
-            // if any leg lost => whole parlay lost
-            if (bet.legs.some(l => l.result === "lost")) {
-                bet.status = "lost";
-                bet.payout = 0;
-                changed++;
-                continue;
-            }
-
-            // if all legs won => pay
-            const allWon = bet.legs.every(l => l.result === "won");
-            if (allWon) {
-                const { payout } = calcParlayReturn(bet.stake, bet.legs);
-                bet.status = "won";
-                bet.payout = round2(payout);
-
-                const u = loadUsers().find(x => x.username === bet.username);
-                if (u) {
-                    u.bankroll = round2(u.bankroll + payout);
-                    updateUser(u);
-                }
-            }
-
-            changed++;
-        }
+      changed++;
+      continue;
     }
 
-    saveBets(bets);
+    if (bet.type === "parlay") {
+      const leg = bet.legs.find(l => l.gameId === gameId);
+      if (!leg) continue;
 
-    toast(`Settled ${game.home} vs ${game.away}. Bets updated: ${changed}.`, "ok");
-    renderAuthBar();
-    renderBoard();
-    renderSlip();
+      leg.result = (leg.pickSide === winnerSide) ? "won" : "lost";
+
+      if (bet.legs.some(l => l.result === "lost")) {
+        bet.status = "lost";
+        bet.payout = 0;
+        changed++;
+        continue;
+      }
+
+      const allWon = bet.legs.every(l => l.result === "won");
+      if (allWon) {
+        const { payout } = calcParlayReturn(bet.stake, bet.legs);
+        bet.status = "won";
+        bet.payout = round2(payout);
+
+        if (!USE_API) {
+          const u = loadUsers().find(x => x.username === bet.username);
+          if (u) {
+            u.bankroll = round2(u.bankroll + payout);
+            updateUser(u);
+          }
+        }
+      }
+
+      changed++;
+    }
+  }
+
+  saveBets(bets);
+
+  toast(`Settled ${game.home} vs ${game.away}. Bets updated: ${changed}.`, "ok");
+  renderAuthBar();
+  renderBoard();
+  renderSlip();
 }
 
-/* ========== Tables ========== */
+/* ========= TABLES ========= */
 function renderBetsTable() {
-    const user = getCurrentUser();
-    if (!user) return;
+  const user = getUser();
+  if (!user) return;
 
-    const bets = loadBets().filter(b => b.username === user.username);
+  const bets = loadBets().filter(b => b.username === user.username);
 
-    el.betsTbody.innerHTML = "";
-    if (bets.length === 0) {
-        el.betsTbody.innerHTML = `<tr><td colspan="8" class="muted">No bets yet.</td></tr>`;
-        return;
-    }
+  el.betsTbody.innerHTML = "";
+  if (bets.length === 0) {
+    el.betsTbody.innerHTML = `<tr><td colspan="8" class="muted">No bets yet.</td></tr>`;
+    return;
+  }
 
-    for (const b of bets) {
-        const tr = document.createElement("tr");
-        const badge = statusBadge(b.status);
+  for (const b of bets) {
+    const tr = document.createElement("tr");
+    const badge = statusBadge(b.status);
 
-        tr.innerHTML = `
+    // NOTE: your old table expects fields that don't exist on bet object (league/match/pickTeam/oddsUsed).
+    // Keeping your original structure: derive from legs.
+    const legSummary = b.type === "single"
+      ? b.legs[0]
+      : (b.legs[0] || null);
+
+    const league = legSummary ? leagueName(legSummary.league) : "-";
+    const match = legSummary ? `${legSummary.home} vs ${legSummary.away}` : "-";
+    const pickTeam = b.type === "single" && legSummary ? legSummary.pickTeam : (b.type === "parlay" ? `Parlay (${b.legs.length})` : "-");
+    const oddsUsed = b.type === "single" && legSummary ? legSummary.odds : calcCombinedAmericanOdds(b.legs || []);
+
+    tr.innerHTML = `
       <td>${prettyShort(b.placedAt)}</td>
-      <td>${leagueName(b.league)}</td>
-      <td>${escapeHtml(b.match)}</td>
-      <td>${escapeHtml(b.pickTeam)}</td>
-      <td>${fmtOdds(b.oddsUsed)}</td>
+      <td>${escapeHtml(league)}</td>
+      <td>${escapeHtml(match)}</td>
+      <td>${escapeHtml(pickTeam)}</td>
+      <td>${fmtOdds(oddsUsed)}</td>
       <td>${fmtMoney(b.stake)}</td>
       <td>${badge}</td>
       <td>${b.status === "won" ? fmtMoney(b.payout) : fmtMoney(0)}</td>
     `;
-        el.betsTbody.appendChild(tr);
-    }
+    el.betsTbody.appendChild(tr);
+  }
 }
 
 function renderLeaderboard() {
-    const users = loadUsers().slice().sort((a, b) => b.bankroll - a.bankroll);
-    const bets = loadBets();
+  // Leaderboard is local-only because we only have local users list.
+  // In API mode, you'll want a /leaderboard endpoint.
+  const users = loadUsers().slice().sort((a, b) => (b.bankroll || 0) - (a.bankroll || 0));
+  const bets = loadBets();
 
-    el.leaderTbody.innerHTML = "";
+  el.leaderTbody.innerHTML = "";
 
-    if (users.length === 0) {
-        el.leaderTbody.innerHTML = `<tr><td colspan="4" class="muted">No users yet.</td></tr>`;
-        return;
-    }
+  if (users.length === 0) {
+    el.leaderTbody.innerHTML = `<tr><td colspan="4" class="muted">No users yet.</td></tr>`;
+    return;
+  }
 
-    users.forEach((u, i) => {
-        const betCount = bets.filter(b => b.username === u.username).length;
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
+  users.forEach((u, i) => {
+    const betCount = bets.filter(b => b.username === u.username).length;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
       <td>${i + 1}</td>
       <td>@${escapeHtml(u.username)}</td>
-      <td>${fmtMoney(u.bankroll)}</td>
+      <td>${fmtMoney(u.bankroll || 0)}</td>
       <td>${betCount}</td>
     `;
-        el.leaderTbody.appendChild(tr);
-    });
+    el.leaderTbody.appendChild(tr);
+  });
 }
 
-/* ========== Reset ========== */
+/* ========= RESET ========= */
 function onResetPrototype() {
-    // wipes local storage keys for this app
-    if (!confirm("Reset prototype data? This deletes users + bets.")) return;
+  if (!confirm("Reset prototype data? This deletes users + bets.")) return;
 
-    localStorage.removeItem(LS_KEYS.USERS);
-    localStorage.removeItem(LS_KEYS.BETS);
-    localStorage.removeItem(LS_KEYS.CURRENT);
+  localStorage.removeItem(LS_KEYS.USERS);
+  localStorage.removeItem(LS_KEYS.BETS);
+  localStorage.removeItem(LS_KEYS.CURRENT);
+  localStorage.removeItem(LS_KEYS.DAILY_WAGER);
 
-    slip = [];
-    el.stakeInput.value = "";
-    ensureStorageInitialized();
-    toast("Prototype reset.", "ok");
-    renderAuthBar();
-    routeToDefault();
-    renderBoard();
-    renderSlip();
+  // optional: keep token if you want; wipe if you want full reset
+  // localStorage.removeItem("token");
+
+  slip = [];
+  el.stakeInput.value = "";
+  ensureStorageInitialized();
+  toast("Prototype reset.", "ok");
+  renderAuthBar();
+  routeToDefault();
+  renderBoard();
+  renderSlip();
 }
 
-/* ========== Helpers ========== */
+/* ========= HELPERS ========= */
 function toast(msg, type = "ok") {
-    el.notice.hidden = false;
-    el.notice.textContent = msg;
+  el.notice.hidden = false;
+  el.notice.textContent = msg;
 
-    // small visual cue by type
-    el.notice.style.borderColor =
-        type === "warn" ? "rgba(239,68,68,0.35)" : "rgba(34,197,94,0.35)";
-    el.notice.style.background =
-        type === "warn" ? "rgba(239,68,68,0.08)" : "rgba(34,197,94,0.08)";
+  el.notice.style.borderColor = type === "warn" ? "rgba(239,68,68,0.35)" : "rgba(34,197,94,0.35)";
+  el.notice.style.background = type === "warn" ? "rgba(239,68,68,0.08)" : "rgba(34,197,94,0.08)";
 
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => (el.notice.hidden = true), 2600);
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => (el.notice.hidden = true), 2600);
 }
 
 function mkBtn(cls, text, onClick) {
-    const b = document.createElement("button");
-    b.className = cls;
-    b.textContent = text;
-    b.type = "button";
-    b.addEventListener("click", onClick);
-    return b;
+  const b = document.createElement("button");
+  b.className = cls;
+  b.textContent = text;
+  b.type = "button";
+  b.addEventListener("click", onClick);
+  return b;
 }
 
 function leagueName(key) {
-    return LEAGUES.find(l => l.key === key)?.name || key;
+  return LEAGUES.find(l => l.key === key)?.name || key;
 }
 
 function fmtMoney(val) {
-    const n = Number(val) || 0;
-    return "$" + n.toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    });
+  const n = Number(val) || 0;
+  return "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtOdds(o) {
-    const n = Number(o);
-    if (n > 0) return `+${n}`;
-    return `${n}`;
+  const n = Number(o);
+  if (n > 0) return `+${n}`;
+  return `${n}`;
 }
 
 function prettyTime(iso) {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
 }
 
 function prettyShort(iso) {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function hoursFromNowISO(hours) {
-    const d = new Date(Date.now() + hours * 3600 * 1000);
-    return d.toISOString();
+  const d = new Date(Date.now() + hours * 3600 * 1000);
+  return d.toISOString();
 }
 
 function americanToDecimal(odds) {
-    const o = Number(odds);
-    if (o > 0) return 1 + (o / 100);
-    if (o < 0) return 1 + (100 / Math.abs(o));
-    return 1;
+  const o = Number(odds);
+  if (o > 0) return 1 + (o / 100);
+  if (o < 0) return 1 + (100 / Math.abs(o));
+  return 1;
 }
 
 function calcParlayReturn(stake, legs) {
-    const s = Number(stake) || 0;
-    let dec = 1;
-    for (const leg of legs) dec *= americanToDecimal(leg.odds);
-    const payout = s * dec;
-    const profit = payout - s;
-    return { profit: round2(profit), payout: round2(payout), decimal: dec };
+  const s = Number(stake) || 0;
+  let dec = 1;
+  for (const leg of legs) dec *= americanToDecimal(leg.odds);
+  const payout = s * dec;
+  const profit = payout - s;
+  return { profit: round2(profit), payout: round2(payout), decimal: dec };
 }
 
 function decimalToAmerican(decimal) {
-    const d = Number(decimal);
-    if (!Number.isFinite(d) || d <= 1) return 0;
-
-    if (d >= 2) return Math.round((d - 1) * 100);
-    return -Math.round(100 / (d - 1));
+  const d = Number(decimal);
+  if (!Number.isFinite(d) || d <= 1) return 0;
+  if (d >= 2) return Math.round((d - 1) * 100);
+  return -Math.round(100 / (d - 1));
 }
 
 function calcCombinedAmericanOdds(legs) {
-    if (!legs || legs.length === 0) return 0;
-    if (legs.length === 1) return Number(legs[0].odds) || 0;
-
-    const { decimal } = calcParlayReturn(1, legs); // stake=1 to get decimal only
-    return decimalToAmerican(decimal);
+  if (!legs || legs.length === 0) return 0;
+  if (legs.length === 1) return Number(legs[0].odds) || 0;
+  const { decimal } = calcParlayReturn(1, legs);
+  return decimalToAmerican(decimal);
 }
 
 function calcMoneylineReturn(stake, odds) {
+  const s = Number(stake);
+  const o = Number(odds);
 
-    const s = Number(stake);
-    const o = Number(odds);
+  let profit = 0;
+  if (o > 0) profit = s * (o / 100);
+  else if (o < 0) profit = s * (100 / Math.abs(o));
 
-    let profit = 0;
-    if (o > 0) {
-        // +150 means win 150 per 100 staked
-        profit = s * (o / 100);
-    } else if (o < 0) {
-        // -200 means stake 200 to win 100
-        profit = s * (100 / Math.abs(o));
-    } else {
-        profit = 0;
-    }
-
-    const payout = s + profit;
-    return { profit: round2(profit), payout: round2(payout) };
+  const payout = s + profit;
+  return { profit: round2(profit), payout: round2(payout) };
 }
 
 function round2(x) {
-    return Math.round((Number(x) + Number.EPSILON) * 100) / 100;
-}
-
-function cryptoRandomId() {
-    // short id for prototype
-    if (window.crypto && crypto.getRandomValues) {
-        const a = new Uint32Array(1);
-        crypto.getRandomValues(a);
-        return a[0].toString(16);
-    }
-    return Math.floor(Math.random() * 1e9).toString(16);
+  return Math.round((Number(x) + Number.EPSILON) * 100) / 100;
 }
 
 function statusBadge(status) {
-    const cls = status === "won" ? "badge win" : status === "lost" ? "badge lose" : "badge open";
-    const label = status.toUpperCase();
-    return `<span class="${cls}">${label}</span>`;
+  const cls = status === "won" ? "badge win" : status === "lost" ? "badge lose" : "badge open";
+  const label = status.toUpperCase();
+  return `<span class="${cls}">${label}</span>`;
 }
 
 function escapeHtml(str) {
-    return String(str)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
