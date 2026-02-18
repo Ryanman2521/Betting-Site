@@ -1,0 +1,78 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  entries Entry[]
+}
+
+model Season {
+  id        String   @id @default(uuid())
+  name      String   @unique   // e.g. "2026-03"
+  startAt   DateTime
+  endAt     DateTime
+  status    String   @default("upcoming") // upcoming | active | ended
+  createdAt DateTime @default(now())
+
+  entries Entry[]
+  bets    Bet[]
+}
+
+model Entry {
+  id        String   @id @default(uuid())
+  userId    String
+  seasonId  String
+  paid      Boolean  @default(false)
+  bankroll  Int      @default(100000)
+  joinedAt  DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  season Season @relation(fields: [seasonId], references: [id])
+
+  bets Bet[]
+
+  @@unique([userId, seasonId]) // user can only join a season once
+}
+
+model Game {
+  id         String   @id @default(uuid())
+  league     String   // NBA, NHL, NFL, MLB, OLY
+  homeTeam   String
+  awayTeam   String
+  startTime  DateTime
+  status     String   @default("scheduled") // scheduled | live | final
+  winner     String?  // home | away
+  createdAt  DateTime @default(now())
+
+  bets Bet[]
+}
+
+model Bet {
+  id        String   @id @default(uuid())
+  entryId   String
+  seasonId  String
+  gameId    String
+
+  pick      String   // home | away
+  odds      Int
+  stake     Int
+  status    String   @default("open") // open | won | lost
+  payout    Int      @default(0)
+  placedAt  DateTime @default(now())
+
+  entry  Entry  @relation(fields: [entryId], references: [id])
+  season Season @relation(fields: [seasonId], references: [id])
+  game   Game   @relation(fields: [gameId], references: [id])
+
+  @@index([seasonId])
+  @@index([gameId])
+}

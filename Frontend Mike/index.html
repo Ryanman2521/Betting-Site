@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wagerbook — Sportsbook</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="script.js" defer></script>
+</head>
+
+<body>
+  <!-- Top Nav -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">PB</div>
+      <div class="brandText">
+        <div class="brandName">Playbook</div>
+        <div class="brandSub">Sportsbook</div>
+        <div class="brand" id="brandHome"></div>
+      </div>
+    </div>
+
+    <div class="topbarCenter">
+      <div class="pill" id="seasonPill">Season: Prototype</div>
+      <div class="searchWrap">
+        <input id="searchInput" class="search" placeholder="Search teams, games..." />
+      </div>
+    </div>
+
+    <div class="topbarRight" id="authBar">
+      <!-- Auth buttons injected by JS -->
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <main class="layout">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebarSection">
+        <div class="sidebarTitle">Leagues</div>
+        <div class="leagueList" id="leagueList"></div>
+      </div>
+
+      <div class="sidebarSection">
+        <div class="sidebarTitle">Quick</div>
+        <button class="ghostBtn" id="btnMyBets">My Bets</button>
+        <button class="ghostBtn" id="btnLeaderboard">Leaderboard</button>
+        <button class="ghostBtn danger" id="btnClearAll">Reset Prototype</button>
+      </div>
+
+      <div class="sidebarSection">
+        <div class="sidebarTitle">Prototype Settle</div>
+        <div class="muted small">
+          This is just for testing. Real version will auto-settle from an API.
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Content -->
+    <section class="content">
+      <!-- Notices -->
+      <div class="notice" id="notice" hidden></div>
+
+      <!-- Auth Panels -->
+      <section class="panel" id="authPanel">
+        <div class="panelHeader">
+          <h2>Welcome</h2>
+          <p class="muted">Register or log in to get your 10,000 bankroll and start placing bets.</p>
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <h3>Create Account</h3>
+            <label class="label">Username</label>
+            <input class="input" id="regUsername" placeholder="e.g. boss123" />
+            <label class="label">Password</label>
+            <input class="input" id="regPassword" type="password" placeholder="••••••••" />
+            <button class="primaryBtn" id="btnRegister">Create & Get 10,000 credits</button>
+            <div class="muted small">Stored locally for prototype only.</div>
+          </div>
+
+          <div class="card">
+            <h3>Log In</h3>
+            <label class="label">Username</label>
+            <input class="input" id="loginUsername" placeholder="e.g. boss123" />
+            <label class="label">Password</label>
+            <input class="input" id="loginPassword" type="password" placeholder="••••••••" />
+            <button class="primaryBtn" id="btnLogin">Log In</button>
+            <div class="muted small">No real security yet (frontend-only).</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dashboard / Odds Board -->
+      <section class="panel" id="boardPanel" hidden>
+        <div class="panelHeader rowBetween">
+          <div>
+            <h2 id="boardTitle">NBA — Moneyline</h2>
+            <p class="muted">Tap odds to add to your betslip. Moneyline only (win/lose).</p>
+          </div>
+          <div class="bankrollBox">
+            <div class="bankrollLabel">Bankroll</div>
+            <div class="bankrollValue" id="bankrollValue">$0</div>
+          </div>
+        </div>
+
+        <div class="boardHeader">
+          <div class="colGame">Game</div>
+          <div class="colTime">Start</div>
+          <div class="colOdds">Home</div>
+          <div class="colOdds">Away</div>
+          <div class="colSettle">Settle</div>
+        </div>
+
+        <div id="gamesList" class="gamesList"></div>
+      </section>
+
+      <!-- My Bets -->
+      <section class="panel" id="betsPanel" hidden>
+        <div class="panelHeader rowBetween">
+          <div>
+            <h2>My Bets</h2>
+            <p class="muted">Open + settled bets for this prototype session.</p>
+          </div>
+          <button class="ghostBtn" id="btnBackToBoard1">Back to Board</button>
+        </div>
+
+        <div class="tableWrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Placed</th>
+                <th>League</th>
+                <th>Match</th>
+                <th>Pick</th>
+                <th>Odds</th>
+                <th>Stake</th>
+                <th>Status</th>
+                <th>Payout</th>
+              </tr>
+            </thead>
+            <tbody id="betsTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Leaderboard -->
+      <section class="panel" id="leaderPanel" hidden>
+        <div class="panelHeader rowBetween">
+          <div>
+            <h2>Leaderboard</h2>
+            <p class="muted">Sorted by bankroll (prototype).</p>
+          </div>
+          <button class="ghostBtn" id="btnBackToBoard2">Back to Board</button>
+        </div>
+
+        <div class="tableWrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>User</th>
+                <th>Bankroll</th>
+                <th>Bets</th>
+              </tr>
+            </thead>
+            <tbody id="leaderTbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <!-- Right Betslip -->
+    <aside class="betslip">
+      <div class="betslipHeader">
+        <div>
+          <div class="betslipTitle">Betslip</div>
+          <div class="muted small" id="betslipSub">Pick odds to start.</div>
+        </div>
+        <button class="ghostBtn" id="btnClearSlip">Clear</button>
+      </div>
+
+      <div id="slipItems" class="slipItems"></div>
+
+      <div class="slipFooter">
+        <div class="slipRow">
+          <div class="muted">Stake</div>
+          <input id="stakeInput" type="number" min="0.01" step="0.01" placeholder="e.g. 25.50" />
+        </div>
+
+        <div class="slipRow">
+          <div class="muted">Potential Profit</div>
+          <div class="money" id="potentialProfit">$0</div>
+        </div>
+
+        <div class="slipRow">
+          <div class="muted">Potential Payout</div>
+          <div class="money" id="potentialPayout">$0</div>
+        </div>
+
+           <div class="placeRow">
+          <button class="primaryBtn full" id="btnPlaceBet" disabled>Place Bet</button>
+          <div class="legsBadge" id="legsBadge" hidden>0</div>
+        </div>
+
+        <div class="muted small" id="slipOddsLine" hidden>
+          Odds: —
+        </div>
+
+        <div class="muted small">
+          Prototype: parlays supported (play-money).
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <div class="muted small">
+      Prototype only. Frontend storage can be edited by users. Real version needs a backend + database.
+    </div>
+  </footer>
+</body>
+
+</html>
