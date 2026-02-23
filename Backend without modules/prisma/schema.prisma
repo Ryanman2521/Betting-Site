@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  entries      Entry[]
+}
+
+model Season {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  startAt   DateTime
+  endAt     DateTime
+  status    String   @default("upcoming")
+  createdAt DateTime @default(now())
+  bets      Bet[]
+  entries   Entry[]
+}
+
+model Entry {
+  id       String   @id @default(uuid())
+  userId   String
+  seasonId String
+  paid     Boolean  @default(false)
+  bankroll Int      @default(100000)
+  joinedAt DateTime @default(now())
+  bets     Bet[]
+  season   Season   @relation(fields: [seasonId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, seasonId])
+}
+
+model Game {
+  id        String   @id @default(uuid())
+  league    String
+  homeTeam  String
+  awayTeam  String
+  startTime DateTime
+  homeOdds  Int?
+  awayOdds  Int?
+  oddsUpdatedAt DateTime?
+  status    String   @default("scheduled")
+  winner    String?
+  createdAt DateTime @default(now())
+  bets      Bet[]
+}
+
+model Bet {
+  id       String   @id @default(uuid())
+  entryId  String
+  seasonId String
+  gameId   String
+  pick     String
+  odds     Int
+  stake    Int
+  status   String   @default("open")
+  payout   Int      @default(0)
+  placedAt DateTime @default(now())
+  entry    Entry    @relation(fields: [entryId], references: [id])
+  game     Game     @relation(fields: [gameId], references: [id])
+  season   Season   @relation(fields: [seasonId], references: [id])
+
+  @@index([seasonId])
+  @@index([gameId])
+}
